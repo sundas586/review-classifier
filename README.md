@@ -44,11 +44,11 @@ In both cases:
 
 | Step | What to do |
 |---|---|
-| 1. Schema | Use the sample schema, or upload your own `.json` |
-| 2. Data | Pick a sample dataset, or upload a `.csv`. Uploading a new CSV starts classification automatically and replaces the previous dashboard |
-| 3. Run | Press **Classify**. If some rows failed or the run stopped early, press **Continue remaining rows** to process only the rows that are not done yet |
+| 1. Schema | Upload your own `.json` schema. If you skip this, the default review schema is used (when `schemas/review_schema.json` is present) |
+| 2. Your reviews | Upload a `.csv`. Nothing is shown until a file is uploaded. Uploading a new CSV starts processing automatically and replaces the previous results |
+| 3. Results | While it runs, a short message explains that this is a prototype and may take a little longer. Afterwards press **Process again** to re-run, or **Continue remaining reviews** if some reviews failed or the run stopped early |
 
-The sidebar lets you change the model, an optional fallback model, the number of parallel requests and the requests-per-minute cap.
+The page has no settings for customers. The model, fallback model, parallel requests, requests per minute and reviews per request are set by the administrator through environment variables (see "Run it locally"). The page uses a light theme set in `.streamlit/config.toml` and shows a short explanation of the app and how to use it at the top.
 
 ## File structures
 
@@ -195,7 +195,7 @@ Free models (names ending in `:free`) have request limits set by OpenRouter, not
 | Free (under $10 credits purchased) | 20 | 50 |
 | With at least $10 credits purchased | 20 | 1,000 |
 
-The limits count **requests**, not tokens or reviews. A free decision model needs one request per review, so it is limited to 20 reviews per minute and 50 per day. A free chat model can carry several reviews per request, which is why the default setup works within the free limits. When a `:free` model is selected the bottom-right corner of the app shows the ceiling (for example "200 categorizations per minute is the limitation of our prototype" at 10 reviews per request), and the sidebar shows **Free requests left today** (the counter resets at 00:00 UTC). The app refuses a run that needs more requests than are left, with a clear message.
+The limits count **requests**, not tokens or reviews. A free decision model needs one request per review, so it is limited to 20 reviews per minute and 50 per day. A free chat model can carry several reviews per request, which is why the default setup works within the free limits. When a `:free` model is selected the bottom-right corner of the app shows the ceiling (for example "200 categorizations per minute is the limitation of our prototype" at 10 reviews per request), and the app refuses a run that needs more requests than are left today (the counter resets at 00:00 UTC), with a clear message.
 
 **Budget for a 1,000-review test on a free account (50 requests per day):** at 25 reviews per request one full run uses 40 requests, so only one full run fits in a day and about 10 requests are left for small tests. At the default 10 per request a full run needs 100 requests, which does not fit in one day on a free account.
 
@@ -216,16 +216,16 @@ With a free chat model the bottom-right message reads "200 categorizations per m
 
 ### When a limit is reached
 
-The app never shows a technical error screen for limits. If OpenRouter refuses to continue, the run **stops early**, everything already classified is kept, and a message explains what happened. Press **Continue remaining rows** afterwards to carry on from where it stopped (from the command line, run the same command again).
+The app never shows a technical error screen for limits. If OpenRouter refuses to continue, the run **stops early**, everything already classified is kept, and a message explains what happened. Press **Continue remaining reviews** afterwards to carry on from where it stopped (from the command line, run the same command again).
 
 | Situation | What you see | What to do |
 |---|---|---|
 | Daily free-request limit reached | "The daily limit for free requests has been reached. It resets at 00:00 UTC..." | Wait for the reset, or buy $10 of credits to raise it to 1,000 per day |
 | Out of credits (paid model) | "This OpenRouter account has run out of credits..." | Add credits on OpenRouter, then continue |
-| Too many requests per minute | The app waits and retries by itself; if it keeps failing the affected rows are marked `failed` with a message | Lower **Max requests per minute** in the sidebar and continue |
+| Too many requests per minute | The app waits and retries by itself; if it keeps failing the affected rows are marked `failed` with a message | Wait a moment and press **Continue remaining reviews** (administrator: lower `MAX_REQUESTS_PER_MIN`) |
 | API key rejected | "OpenRouter rejected the API key..." | Check the key in the settings file or app secrets |
-| Model name unknown or unavailable | "The model '...' was not found..." (a fallback model is tried first if one is set) | Check the model name in the sidebar |
-| No internet / provider error | Affected rows are marked `failed` with the reason | Continue remaining rows once the connection is back |
+| Model name unknown or unavailable | "The model '...' was not found..." (a fallback model is tried first if one is set) | Administrator: check `PRIMARY_MODEL` |
+| No internet / provider error | Affected rows are marked `failed` with the reason | Continue remaining reviews once the connection is back |
 | Unreadable CSV or schema | A short message asking for a CSV UTF-8 file or a valid schema | Fix the file and upload it again |
 | Anything unexpected | A short message, with details hidden in an expandable "Technical details" box | Try again |
 
@@ -255,6 +255,8 @@ APP_PASSWORD=
 ```
 
 Never commit `.env`. `MAX_ROWS` caps rows per run and `APP_PASSWORD` (optional) adds an access code, both useful on a hosted app that uses a shared key. `FALLBACK_MODEL` is an optional second model tried when the first one fails.
+
+Optional tuning (defaults in brackets): `WORKERS` (4) parallel requests, `MAX_REQUESTS_PER_MIN` (18 for free models, otherwise 0 = no limit) and `REVIEWS_PER_REQUEST` (10, chat models only, up to 25). On Streamlit Cloud put the same names in the app's Secrets.
 
 Quick check from the terminal (5 reviews), then start the app:
 
@@ -297,7 +299,7 @@ Supporting files:
 ## Known limitations
 
 - On the free setup a free account gets 50 requests per day, so one full 1,000-review run (40 requests at 25 reviews per request) fits in a day but leaves little room for repeat tests. Buying $10 of credits once raises the limit to 1,000 requests per day.
-- The free Nemotron model is slow (50 to 75 seconds per request) and, as a free shared model, can be busy or rate limited at times. The app retries and then marks the affected reviews `failed`, and **Continue remaining rows** picks them up again.
+- The free Nemotron model is slow (50 to 75 seconds per request) and, as a free shared model, can be busy or rate limited at times. The app retries and then marks the affected reviews `failed`, and **Continue remaining reviews** picks them up again.
 - Chat models can return a value outside the allowed options; such reviews are marked `failed`, not guessed.
 - Decision models (Jev, Mercury Decide) answer choices, yes/no questions and scores. They do not write free text, so `text` fields (such as a one-sentence summary of the problem) stay empty; use a chat model for those.
 - A decision model needs one request per review and cannot be batched, so on a free model the limits above allow 20 reviews per minute and 50 (or 1,000 with credits) per day.
