@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+.streamlit/secrets.toml
+data/classified*.csv
+service_account*.json
+*credentials*.json
+# private working notes, not for the client repo
+project_context.md
+PROJECT_GUIDE.html
