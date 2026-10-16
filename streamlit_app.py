@@ -619,8 +619,7 @@ hero()
 # 1. connect the sheet
 with st.container(key="card_connect"):
     st.subheader("1. Connect your Google Sheet")
-    st.caption("First time here? Open *About the app* in the left menu for a short, simple guide, or take the tour.")
-    st.button("Take the 1-minute tour", icon=":material/tour:", on_click=start_tour, key="tour_button")
+    st.caption("First time here? Open *About the app* in the left menu for a short, simple guide.")
     url = st.text_input("Google Sheet link", placeholder="https://docs.google.com/spreadsheets/d/...")
     script = None  # a customer's own Google connection is switched off for now (the server's setting, if any, is used)
 
