@@ -84,7 +84,7 @@ Paste the link and press **Load / refresh data**. Processing starts automaticall
 | **Messages** | An "under construction" page with a picture (marked SOON) |
 | **Premium plans** | A "coming soon" page with a picture (marked SOON) |
 
-On the first visit a welcome pop-up appears over a blurred page (once per visit). It shows a number of teams that use the app: set the real number with `USERS_COUNT` in `.env` (the default `1,200` is a placeholder) and switch the pop-up off with `WELCOME_POPUP=0`. The testimonials are sample text in `TESTIMONIALS` in `streamlit_app.py`; replace them with real quotes before launch.
+On the first visit a welcome pop-up appears over a blurred page (once per visit). It offers **Show me around (1 minute)**, a 4-step guided tour (paste the link, let the app read the sheet, press Load / refresh data, see and download the results) with Back, Next, Skip and Finish buttons, or **Skip**. The tour can be opened again at any time with **Take the 1-minute tour** on the *Use the App for free* and *About the app* pages. The pop-up shows a number of teams that use the app: set the real number with `USERS_COUNT` in `.env` (the default `1,200` is a placeholder) and switch the pop-up off with `WELCOME_POPUP=0`. The testimonials are sample text in `TESTIMONIALS` in `streamlit_app.py`; replace them with real quotes before launch. The tour steps are in `TOUR_STEPS` in the same file.
 
 ## Connecting the app to Google Sheets (once, by the administrator)
 
@@ -232,7 +232,7 @@ Command line (CSV and a JSON schema file, developers only): `python main.py --da
 | `report.py` | Summary numbers and charts: the Summary tab content, the PDF and the Excel file |
 | `apps_script/Code.gs` | The Google Apps Script web app used to write into a sheet without a Google key |
 | `assets/hero.svg` | The illustration behind the page title. To use your own picture, add `assets/hero.png` (or `.jpg`/`.webp`); it then replaces the illustration |
-| `assets/welcome_bg.svg`, `assets/soon_messages.svg`, `assets/soon_premium.svg` | Pictures for the welcome pop-up and the Messages and Premium plans pages |
+| `assets/welcome_bg.svg`, `assets/soon_messages.svg`, `assets/soon_premium.svg`, `assets/tour_1.svg` to `tour_4.svg` | Pictures for the welcome pop-up, the guided tour and the Messages and Premium plans pages |
 | `defaults.py` | The built-in classification settings |
 | `runner.py` | Runs the reviews in parallel, respects the rate limit, records status, speed and cost |
 | `classifier.py` | Builds the prompt or questions, calls OpenRouter, checks every answer |

@@ -81,7 +81,8 @@ st.markdown(
 <style>
 html { font-size: 17.5px; }
 .stApp { background: #e4e4e8; }
-.block-container { max-width: 1500px; padding: 14px 14px 4rem 28px; }
+.block-container { max-width: 1500px; padding: 14px 24px 4rem 48px; }
+[data-testid="stToolbar"] { display: none; }
 [data-testid="stElementContainer"]:has(style) { display: none !important; }
 [data-testid="stCaptionContainer"] p, [data-testid="stCaptionContainer"] { font-size: 0.95rem; }
 [data-testid="stWidgetLabel"] p { font-size: 1rem; }
@@ -204,6 +205,16 @@ div[role="dialog"] { border-radius: 32px !important; background: #f4f1ff !import
 .welcome .ticks span { display: inline-block; background: rgba(255, 255, 255, 0.85); border-radius: 999px; padding: 6px 14px; margin: 0 4px 8px; font-size: 0.82rem; font-weight: 600; }
 @keyframes pop { from { transform: scale(0.85); opacity: 0; } to { transform: none; opacity: 1; } }
 
+/* quick tour pop-up */
+.tour { text-align: center; }
+.tour small { color: #6b6b73; font-weight: 600; }
+.tour-dots { display: flex; justify-content: center; gap: 8px; margin: 2px 0 6px; }
+.tour-dots span { width: 8px; height: 8px; border-radius: 999px; background: #d4d4da; }
+.tour-dots span.on { width: 26px; background: #1c1c1e; }
+.tour-art { height: 230px; margin: 12px 0 14px; border-radius: 20px; background-color: #f4f1ff; background-repeat: no-repeat; background-position: center; background-size: contain; animation: pop 0.4s ease both; }
+.tour h3 { margin: 0 0 6px; font-size: 1.35rem; font-weight: 800; }
+.tour p { margin: 0 auto 10px; max-width: 470px; color: #52525b; line-height: 1.55; }
+
 /* testimonials */
 .testi { position: relative; border-radius: 26px; background: #fff; padding: 28px 34px 22px; overflow: hidden; }
 .testi h4 { margin: 0 0 14px; font-size: 1.05rem; }
@@ -309,7 +320,57 @@ def welcome_dialog():
         '<div class="ticks"><span>Free to use</span><span>No sign-up needed</span><span>Charts you can download</span></div></div>',
         unsafe_allow_html=True,
     )
-    if st.button("Get started", type="primary", width="stretch"):
+    start, skip = st.columns([1.5, 1])
+    if start.button("Show me around (1 minute)", type="primary", width="stretch", key="welcome_tour"):
+        st.session_state["start_tour"] = True
+        st.rerun()
+    if skip.button("Skip", width="stretch", key="welcome_skip"):
+        st.rerun()
+
+
+TOUR_STEPS = (
+    ("Paste the link of your Google Sheet",
+     "Open your sheet, copy the link from the address bar of your browser and paste it in the box. Your reviews should be "
+     "on a tab named Data.", "tour_1.svg"),
+    ("Let the app read your sheet",
+     "In Google Sheets click Share. Under General access choose Anyone with the link. Viewer is enough.", "tour_2.svg"),
+    ("Press Load / refresh data",
+     "The app reads your reviews and checks every one. A big sheet can take a few minutes, so please wait for the "
+     "progress bar to finish.", "tour_3.svg"),
+    ("See and download your results",
+     "Look at the four quick-answer cards and the charts. Use the search box to find reviews. Then download the Excel "
+     "file and the PDF.", "tour_4.svg"),
+)
+
+
+def tour_move(step):
+    st.session_state["tour_step"] = min(max(st.session_state.get("tour_step", 0) + step, 0), len(TOUR_STEPS) - 1)
+
+
+def start_tour():
+    st.session_state["start_tour"] = True
+
+
+@st.dialog("Quick tour", width="medium")
+def tour_dialog():
+    i = st.session_state.get("tour_step", 0)
+    title, text, art = TOUR_STEPS[i]
+    if i == 1 and sheets.can_write():
+        text = "In Google Sheets click Share. Under General access choose Anyone with the link and change Viewer to Editor."
+    st.markdown(f'<style>.tour-art {{ background-image: url("{data_uri(ASSETS / art)}"); }}</style>', unsafe_allow_html=True)
+    dots = "".join(f'<span class="{"on" if n == i else ""}"></span>' for n in range(len(TOUR_STEPS)))
+    st.markdown(
+        f'<div class="tour"><div class="tour-dots">{dots}</div><small>Step {i + 1} of {len(TOUR_STEPS)}</small>'
+        f'<div class="tour-art"></div><h3>{title}</h3><p>{text}</p></div>',
+        unsafe_allow_html=True,
+    )
+    skip, back, forward = st.columns([1, 1, 1.4])
+    if skip.button("Skip tour", key="tour_skip", width="stretch"):
+        st.rerun()
+    back.button("Back", key="tour_back", disabled=i == 0, on_click=tour_move, args=(-1,), width="stretch")
+    if i < len(TOUR_STEPS) - 1:
+        forward.button("Next", key="tour_next", type="primary", on_click=tour_move, args=(1,), width="stretch")
+    elif forward.button("Finish", key="tour_finish", type="primary", width="stretch"):
         st.rerun()
 
 
@@ -352,6 +413,9 @@ with st.sidebar:
 if WELCOME_POPUP and not st.session_state.get("welcomed"):
     st.session_state["welcomed"] = True  # only the first time in a visit
     welcome_dialog()
+elif st.session_state.pop("start_tour", False):
+    st.session_state["tour_step"] = 0
+    tour_dialog()
 
 if page in SOON_PAGES:
     soon_page(page)
@@ -362,6 +426,7 @@ if page in SOON_PAGES:
 if page == "about":
     schema = DEFAULT_SCHEMA
     header("About the app", "A short guide: what the app does, how to get your Google Sheet ready, and what you will see.")
+    st.button("Take the 1-minute tour", icon=":material/tour:", on_click=start_tour, key="tour_button_about")
 
     WRITES = sheets.can_write()  # False for customers for now: they download the results instead
     with st.container(key="card_about_what"):
@@ -554,7 +619,8 @@ hero()
 # 1. connect the sheet
 with st.container(key="card_connect"):
     st.subheader("1. Connect your Google Sheet")
-    st.caption("First time here? Open *About the app* in the left menu for a short, simple guide.")
+    st.caption("First time here? Open *About the app* in the left menu for a short, simple guide, or take the tour.")
+    st.button("Take the 1-minute tour", icon=":material/tour:", on_click=start_tour, key="tour_button")
     url = st.text_input("Google Sheet link", placeholder="https://docs.google.com/spreadsheets/d/...")
     script = None  # a customer's own Google connection is switched off for now (the server's setting, if any, is used)
 
