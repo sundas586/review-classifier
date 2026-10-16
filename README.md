@@ -1,240 +1,196 @@
-# Review Classifier (prototype)
+﻿# Review Classifier (prototype)
 
-Turns raw product reviews into structured data. You upload a **schema** (the fields you want) and a **CSV** (the reviews), the app asks an AI model on OpenRouter to fill in those fields for every row, and shows the results in a table, charts and a speed report.
+Turns raw product reviews into structured data. The reviews live in a **Google Sheet**, an AI model on OpenRouter classifies and tags each one, the results are **written back into the same Google Sheet**, and the page shows a summary with charts that can be downloaded as a PDF.
 
-The default model is **NVIDIA Nemotron 3 Super** (`nvidia/nemotron-3-super-120b-a12b:free`), a free chat model, so the prototype runs at no cost. It can be switched to **Jev** (`typesafe/jev-1.13`), a *decision model* that answers typed questions (pick one option, yes/no, score) and returns a probability for each answer. Jev is faster and cheap but not free; see "Models, speed and cost" below.
+The default model is **NVIDIA Nemotron 3 Super** (`nvidia/nemotron-3-super-120b-a12b:free`), a free chat model, so the prototype runs at no cost. It can be switched to **Jev** (`typesafe/jev-1.13`), a *decision model* that answers typed questions and returns a probability for each answer. Jev is fast and cheap but not free (see "Models, speed and cost").
 
 ## How it works
 
-1. You provide a schema (JSON) and a data file (CSV). Sample versions of both are built in, including a 1,000-review dummy dataset.
-2. The app turns the schema into questions and sends each review to the model.
-   - **Decision models (Jev, Mercury Decide):** one request per review. The model answers every question about that review at once.
-   - **Chat models:** reviews are sent in **batches of 10 per request** and the model replies with a JSON list.
-3. Each answer is checked against the schema (for example `sentiment` must be one of the allowed options), and anything invalid is marked `failed` instead of being guessed.
-4. The results are shown as a filterable table, summary charts and a CSV download.
-
-Example of what happens to two reviews:
-
 ```
-Input rows:   R0042 | Steel Water Bottle 750ml | "Lid leaks in my bag, ruined my laptop sleeve"
-              R0043 | Wireless Earbuds X2      | "Great sound, battery lasts all day"
-
-Output rows:  R0042 -> sentiment=negative | category=quality     | priority=high | has_issue=True  | status=done
-              R0043 -> sentiment=positive | category=performance | priority=low  | has_issue=False | status=done
+Google Sheet "Data"  ->  app  ->  AI model (OpenRouter)  ->  Sheet tabs "Categorization" + "Summary"  +  summary page / PDF
 ```
 
-**Resuming.** Every row has a `status` column. If a run stops halfway (closed browser, rate limit, network error), running it again only processes the rows whose status is not `done`, so finished work is never repeated and no requests are wasted.
+1. The customer puts the reviews in a tab named **Data** of a Google Sheet, sets the sheet's General access to *Anyone with the link* (Viewer is enough), pastes the link into the page and presses **Load / refresh data**. (Writing results back into the sheet is available when the administrator connects it, see "Connecting the app to Google Sheets"; for now customers download their results instead.)
+2. The app reads the **Data** tab, classifies each review with a **fixed** set of questions (nothing to upload or configure), and checks every answer (for example `sentiment` must be one of the allowed options). Anything invalid is marked `failed` instead of being guessed.
+3. When the run finishes, the app empties and refills two tabs in the same file:
+   - **Categorization**: every review with its classification next to it.
+   - **Summary**: an overview (reviews, classified, failed) and a small table per field (for example how many reviews are positive, negative, neutral).
+4. The page shows the same results as a table, filters and charts. The charts can be downloaded as a **PDF**.
 
-### What happens in each request
+Example row in the **Categorization** tab:
 
-Each request to OpenRouter is built in `classifier.py`:
+```
+review_id | product                  | review_text                                  | sentiment | category | tags         | priority | has_issue | status
+R0042     | Steel Water Bottle 750ml | Lid leaks in my bag, ruined my laptop sleeve | negative  | quality  | leaks, ...   | high     | True      | done
+```
 
-- **Decision models** (`typesafe/jev-1.13`, `inception/mercury-decide:free`) are called on the Decisions endpoint (`/api/alpha/decisions`). The body holds the model name, the review's columns as the `state`, and the `questions` built from the schema. The reply holds a typed answer per question plus the cost of the request.
-- **Chat models** are called on the chat endpoint (`/api/v1/chat/completions`). The body holds the model name, our prompt (the task, the schema fields and 10 reviews) and `temperature: 0`, which keeps answers as stable as possible. The model's text reply is parsed as a JSON list.
-
-In both cases:
-
-- **Headers:** the API key, sent as a Bearer token. It is read from the settings file or app secrets and never appears in the code.
-- **Retries:** the app makes up to 3 attempts. If OpenRouter answers `429` (too many requests per minute), a server error (`500` and above) or the network drops, it waits 2, 4 and then 8 seconds (`2 ** (attempt + 1)`) before trying again. If OpenRouter says how long to wait (`Retry-After`), that time is used instead, up to 30 seconds.
-- **Success:** the answer is checked against the schema, record by record.
-- **Unexpected reply:** if the reply does not have the expected shape (for example there are no answers in it), or all 3 attempts fail, the request is reported as an error (`ClassifyError`). The affected reviews are marked `failed` and can be continued later.
-- **No retry for account problems:** a rejected key, no credits, an unknown model or the daily limit would fail again on every attempt, so the run stops at once with a clear message (see "When a limit is reached").
+**Refresh.** Every press of **Load / refresh data** reads the **Data** tab again and truncates and rewrites **Categorization** and **Summary**. To save requests, reviews that are unchanged since the last run (same row content, status `done` in Categorization) are not sent to the model again; new and changed reviews are. If a run stops halfway (rate limit, closed browser) press **Continue remaining reviews**, or refresh again. **Process all reviews again** redoes everything.
 
 ## Using the app
 
-| Step | What to do |
-|---|---|
-| 1. Schema | Upload your own `.json` schema. If you skip this, the default review schema is used (when `schemas/review_schema.json` is present) |
-| 2. Your reviews | Upload a `.csv`. Nothing is shown until a file is uploaded. Uploading a new CSV starts processing automatically and replaces the previous results |
-| 3. Results | While it runs, a short message explains that this is a prototype and may take a little longer. Afterwards press **Process again** to re-run, or **Continue remaining reviews** if some reviews failed or the run stopped early |
+### 1. Prepare the Google Sheet
 
-The page has no settings for customers. The model, fallback model, parallel requests, requests per minute and reviews per request are set by the administrator through environment variables (see "Run it locally"). The page uses a light theme set in `.streamlit/config.toml` and shows a short explanation of the app and how to use it at the top.
+Create a **Data** tab. The **Categorization** and **Summary** tabs are only needed when writing back into the sheet is connected (otherwise the Excel file contains all three as sheets). The *About the app* page repeats these instructions under "Good to know":
+
+| Tab | Content |
+|---|---|
+| **Data** | The reviews, always in the same format (below) |
+| **Categorization** | Empty. The app fills it |
+| **Summary** | Empty. The app fills it |
+
+The **Data** tab has these columns in the first row, one review per row (capital letters in the header do not matter, extra columns are kept as context, rows without a `review_text` are skipped):
+
+| review_id | product | review_text |
+|---|---|---|
+| R0042 | Steel Water Bottle 750ml | Lid leaks in my bag, ruined my laptop sleeve |
+| R0043 | Wireless Earbuds X2 | Great sound, battery lasts all day |
+
+The **Data** tab is only read, never changed. If the Categorization or Summary tab is missing, the app creates it.
+
+Set the sheet's General access to **Anyone with the link** with the role **Editor** (Share button in Google Sheets). With Option B below you can instead share it with the service account email shown on the page. A sheet that is only *Viewer* can be read, but the results cannot be written back.
+
+If the Data tab has an extra column with the same name as a result field (for example `category`), the app keeps your column and calls it `category_original`.
+
+### 2. What gets classified
+
+The classification is fixed, so the customer never uploads a schema. Each review gets:
+
+| Field | Type | Values |
+|---|---|---|
+| `sentiment` | choice | positive, negative, neutral |
+| `category` | choice | quality, shipping, price, packaging, size, fit, customer service, performance, design, other |
+| `tags` | tags (several) | 14 tags such as "late delivery", "poor quality", "good value" |
+| `priority` | choice | low, medium, high |
+| `has_issue` | yes/no | True / False |
+
+The administrator changes these in `defaults.py` (one place, applies to every customer).
+
+### 3. Run and read the results
+
+Paste the link and press **Load / refresh data**. Processing starts automatically and the results are written to the sheet when it finishes (if writing is connected, see below). A short message explains that this is a prototype and may take a little longer on a free model. Afterwards you see:
+
+- **Four insight cards**: share of positive reviews, reviews with a problem, the most discussed category and the number of high priority reviews.
+- **Speed numbers** (processed, failed, requests used, total time, reviews per second, request time).
+- **Download your results** (a dark card above the tabs): **Download Excel file** gives `review_summary.xlsx` with three sheets, *Data* (the reviews as loaded), *Categorization* (every review with its answers) and *Summary* (totals and a table per field); **Download charts (PDF)** gives `review_summary.pdf` with the charts. Excel keeps the data editable and filterable, the PDF keeps the charts looking the same everywhere.
+- Two tabs: **Summary & charts** (interactive charts, hover for exact numbers) and **Classified reviews** (a search box for words such as "refund", click-filters for sentiment, category and priority, and the table).
+- **Open my Google Sheet** opens the file, **Write results to the sheet again** repeats the write-back (only when writing is connected), **Process all reviews again** redoes everything and **Continue remaining reviews** carries on after an early stop.
+
+### The pages (left panel)
+
+| Button | What it shows |
+|---|---|
+| **Use the App for free** | Connect a sheet, run, results |
+| **About the app** | A short guide in plain English ("Good to know", what is analysed, how to read the results) and rotating testimonials at the bottom |
+| **Messages** | An "under construction" page with a picture (marked SOON) |
+| **Premium plans** | A "coming soon" page with a picture (marked SOON) |
+
+On the first visit a welcome pop-up appears over a blurred page (once per visit). It shows a number of teams that use the app: set the real number with `USERS_COUNT` in `.env` (the default `1,200` is a placeholder) and switch the pop-up off with `WELCOME_POPUP=0`. The testimonials are sample text in `TESTIMONIALS` in `streamlit_app.py`; replace them with real quotes before launch.
+
+## Connecting the app to Google Sheets (once, by the administrator)
+
+Google does not allow anonymous writes, so saving results into the sheet needs one account that does the writing. **Without any setup the app works in read-only mode, which is what customers get for now**: it reads a sheet that is open to *Anyone with the link* (Viewer is enough), classifies the reviews, and shows the results and charts on the page, with the Excel and PDF downloads, but it does not write the Categorization and Summary tabs. To also write into the sheet use one of these two options; the page switches on writing by itself when either is configured.
+
+### Option A (prototype, no Google Cloud, no key): Apps Script web app
+
+The customer only pastes a link; their sheet must have General access **Anyone with the link: Editor**.
+
+1. Open any Google Sheet with your own Google account, then **Extensions > Apps Script**.
+2. Paste the contents of `apps_script/Code.gs`, and change `TOKEN` to a secret of your own.
+3. **Deploy > New deployment > Web app**, *Execute as: Me*, *Who has access: Anyone*. Authorise when asked and copy the web app URL.
+4. Set two values (in `.env` locally, in Secrets on Streamlit Cloud):
+   ```
+   APPS_SCRIPT_URL=https://script.google.com/macros/s/.../exec
+   APPS_SCRIPT_TOKEN=the-secret-from-step-2
+   ```
+
+The script runs as you, so it can open any sheet that your account can edit (including sheets shared as Anyone with the link: Editor). The token stops other people from using the URL. For a production setup use Option B. If `APPS_SCRIPT_URL` is set it is used and any service account key is ignored.
+
+**A customer's own Google connection (switched off in the page for now).** The page used to have an optional *Advanced* box where a user could paste the address and password of their own deployment of `apps_script/Code.gs`. It was removed so that customers only see the sheet link. The code behind it is still there (`read_data`, `write_categorization` and the other functions in `sheets.py` accept an optional `script=(address, password)`), so it can be shown again later. The address must start with `https://script.google.com/`.
+
+### Option B: service account (key)
+
+1. In Google Cloud Console create a project and enable the **Google Sheets API**. (The Drive API is not needed.)
+2. Create a **service account** and add a **JSON key** to it. Keep the file private; never commit it.
+3. Customers share their Google Sheet with the service account's `client_email` as **Editor** (the page displays this address), or set General access to Anyone with the link: Editor.
+4. Give the app the key:
+   - **Streamlit Cloud:** in the app's Secrets add the whole JSON as one value in triple single quotes:
+     ```toml
+     GOOGLE_SERVICE_ACCOUNT_JSON = '''{ "type": "service_account", ... }'''
+     ```
+   - **Locally:** save the file as `service_account.json` in the project folder (it is gitignored) and put `GOOGLE_SERVICE_ACCOUNT_FILE=service_account.json` in `.env`.
+
+The app only asks for the Sheets scope (`https://www.googleapis.com/auth/spreadsheets`). In both options results are written as plain text, so text that looks like a formula is never executed. If neither option is configured the app runs in read-only mode (see above) and the downloads are the way to get the results.
 
 ## File structures
 
-### Input data file (CSV / Excel)
+### Categorization tab
 
-One row per review, with the column names in the first row. The app reads `.csv` files (UTF-8). If your data is in Excel, use **File > Save As > CSV UTF-8 (Comma delimited)** first; `.xlsx` files are not uploaded directly.
-
-Any columns are allowed and **every column is sent to the model**, so put the review text and any helpful context (product, rating, date) in the file. The sample data has three:
-
-| Column | Example | Meaning |
-|---|---|---|
-| `review_id` | `R0042` | Unique id of the review |
-| `product` | `Steel Water Bottle 750ml` | Product the review is about |
-| `review_text` | `Lid leaks in my bag, ruined my laptop sleeve` | The review itself |
-
-```csv
-review_id,product,review_text
-R0042,Steel Water Bottle 750ml,"Lid leaks in my bag, ruined my laptop sleeve"
-R0043,Wireless Earbuds X2,"Great sound, battery lasts all day"
-```
-
-Text that contains a comma must be wrapped in double quotes (Excel and most tools do this automatically).
-
-### Output file (results CSV)
-
-The downloaded file contains your original columns, then **one new column per schema field** (in the order of the schema), then four tracking columns. With the sample schema:
+Your original columns from **Data**, then one column per field, then tracking columns:
 
 | Column | Filled by | Example |
 |---|---|---|
-| `review_id`, `product`, `review_text` | Your input | |
-| `sentiment` | Model (`choice`) | `negative` |
-| `category` | Model (`choice`) | `quality` |
-| `tags` | Model (`list`, joined with commas) | `broke or stopped working, poor quality` |
-| `priority` | Model (`choice`) | `high` |
-| `has_issue` | Model (`boolean`) | `True` |
+| your columns | You | `review_id`, `product`, `review_text` |
+| `sentiment`, `category`, `priority` | Model (`choice`) | `negative` |
+| `tags` | Model (`tags`, comma-separated) | `broke or stopped working, poor quality` |
+| `has_issue` | Model (`yes/no`) | `True` |
 | `status` | App | `done` or `failed` |
-| `model` | App | Model that produced the answer |
-| `latency_s` | App | Seconds the request took (for chat models, shared by the reviews in the same batch) |
-| `error` | App | Reason, only when `status` is `failed` |
+| `model`, `error` | App | Model used, reason when `failed` |
 
-### Schema file (JSON)
+### Summary tab
 
-The schema tells the model which fields to fill in. Top level:
+| Block | Content |
+|---|---|
+| Overview | Reviews, Classified, Failed, Not processed yet, and when it was last updated |
+| One table per field | Value, number of reviews, share of classified reviews (for `tags`: every tag found, most common first) |
 
-| Key | Required | Meaning |
+### Field types
+
+| Type | Chat models return | Decision models (Jev, Mercury Decide) |
 |---|---|---|
-| `description` | No (recommended) | One sentence telling the model the task |
-| `fields` | Yes | List of fields to extract (at least one) |
+| `choice` | One value from the options | One choice question; most likely option wins |
+| `tags` | A list from the options | One yes/no question per option; tags at or above the threshold are kept (default 0.5) |
+| `yes/no` | true / false | One yes/no question; true at or above the threshold |
+| `text` | A short sentence | Not supported (the column stays empty) |
 
-Each entry in `fields`:
-
-| Key | Required | Meaning |
-|---|---|---|
-| `name` | Yes | Name of the field. Must be unique. It becomes the column name in the results |
-| `type` | Yes | One of the types below |
-| `options` | For `choice`; for `list` with decision models | The allowed values (for a `list`, the possible tags). The model must pick from them |
-| `description` | No (recommended) | The question asked about the review, or a hint on how to fill the field |
-| `criteria` | No (recommended) | Explains each option so the model can tell them apart: `{ "option": "what it means" }` (for `number`: an ordered list of scale labels) |
-| `threshold` | No (default 0.5) | For `list` and `boolean` fields on decision models: how sure (0 to 1) the model must be before a tag or `True` is recorded |
-
-| Type | Chat models return | Decision models (Jev, Mercury Decide) | Stored as |
-|---|---|---|---|
-| `choice` | One value from `options` | One choice question; the most likely option wins | Text, exactly as written in `options` |
-| `list` | A list of short strings | One yes/no question per entry in `options`; tags at or above `threshold` are kept | Text, comma-separated |
-| `boolean` | `true` or `false` | One yes/no question; `True` at or above `threshold` | `True` / `False` |
-| `number` | A number | Only if `criteria` is an ordered list: a score on that scale | Number |
-| `text` | A short sentence | **Not supported** (decision models do not write text); the column stays empty | Text |
-
-Example using the field types:
-
-```json
-{
-  "description": "Classify an e-commerce product review.",
-  "fields": [
-    { "name": "sentiment", "type": "choice", "options": ["positive", "negative", "neutral"],
-      "description": "What is the overall tone of the review?",
-      "criteria": { "positive": "The customer is happy.", "negative": "The customer is unhappy.", "neutral": "Neither." } },
-    { "name": "tags", "type": "list", "options": ["late delivery", "poor quality", "good value"], "threshold": 0.5,
-      "description": "Which tags apply to the review?" },
-    { "name": "mentions_refund", "type": "boolean", "threshold": 0.5,
-      "description": "Does the customer ask for a refund?" },
-    { "name": "satisfaction", "type": "number", "criteria": ["Very unhappy", "Unhappy", "Neutral", "Happy", "Very happy"],
-      "description": "How satisfied is the customer?" },
-    { "name": "key_issue", "type": "text", "description": "one short sentence, empty if none (chat models only)" }
-  ]
-}
-```
-
-If the schema is invalid (missing `name`, duplicate names, unknown `type`, `choice` without `options`) the app shows what is wrong before anything is sent to the model. When a decision model is selected, the app also lists any fields it will leave empty (for example a `text` field, or a `list` without `options`). If a chat model answers with a value that is not allowed (for example `sentiment = "angry"` when it must be positive, negative or neutral), that review is marked `failed` and can be retried. A complete working schema is in `schemas/review_schema.json`.
-
-## Sample data
-
-The app ships with two dummy datasets: `data/reviews.csv` (100 hand-written reviews) and `data/reviews_1000.csv` (1,000 reviews, used for the speed test). The 1,000-review file is created by `generate_data.py`: it keeps the 100 hand-written reviews and generates the other 900 from short sentence banks for 8 products.
-
-To get a realistic mix of opinions, each generated review is given a target tone picked at random:
-
-```python
-tone = random.choices(["pos", "neg", "neu"], weights=[45, 35, 20])[0]
-```
-
-| Tone | Weight | Typical review |
-|---|---|---|
-| Positive | 45% | "Battery lasts all day and the case charges fast." |
-| Negative | 35% | "The lid leaks when it's in my bag." |
-| Neutral | 20% | "Average running shoes." |
-
-So about 45 out of 100 generated reviews should come out positive, 35 negative and 20 neutral. Then, to make them look less repetitive:
-
-- About 30% of positive and negative reviews get a second sentence of the same tone.
-- Roughly 4 in 10 reviews get an extra remark about delivery, support or price, and some negative reviews end on a positive note ("But delivery was quick"), which makes them mixed.
-- About 8% are written in lowercase without a full stop, and about 5% end with "!!".
-- A fixed random seed (`random.seed(7)`) means re-running the script gives the same file.
-
-The target tone is only used to generate the text. It is not saved in the file, so it is not a "correct answer" to score the model against, and the model's sentiment counts will only be roughly in line with 45 / 35 / 20 (the 100 hand-written reviews and mixed reviews shift them a little).
+The command-line tool (`main.py`) and the code accept the same settings as a JSON schema (`description` plus a list of `fields` with `name`, `type`, `options`, `description`, `criteria`, `threshold`). This is for developers only; customers never need it.
 
 ## Models, speed and cost
 
 | Model | Type | Cost | Notes |
 |---|---|---|---|
-| `nvidia/nemotron-3-super-120b-a12b:free` (default) | Chat model | Free | Reviews are sent in batches (10 by default, up to 25 per request). Free-tier limits apply (below). Slow: about 50 to 75 seconds per request. Tested: 25 of 25 reviews classified in one request |
-| `typesafe/jev-1.13` | Decision model (Jev) | Billed on input tokens only; output tokens are free | One request per review. No free-tier request cap |
-| `inception/mercury-decide:free` | Decision model | Free | Free-tier limits apply (below). In our tests from Pakistan it answered with a regional access block (HTTP 403), so it could not be used from there |
-| `liquid/lfm-2.5-2.6b:free`, `cohere/north-mini-code:free` | Chat models | Free | Did not return valid JSON for a batch in our tests, so not recommended |
-| `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free` | Chat models | Free | Answered "too many requests" for every call when tested, so not reliable at the moment |
+| `nvidia/nemotron-3-super-120b-a12b:free` (default) | Chat model | Free | Reviews are sent in batches (25 per request by default). Free-tier limits apply (below). Slow: about 50 to 75 seconds per request. Tested: 25 of 25 reviews classified in one request |
+| `typesafe/jev-1.13` | Decision model (Jev) | About $0.06 per 1,000 reviews with 18 questions | One request per review, about 0.9 to 1.2 s each. No free-tier request cap |
+| `inception/mercury-decide:free` | Decision model | Free | In our tests from Pakistan it answered with a regional access block (HTTP 403) |
+| `liquid/lfm-2.5-2.6b:free`, `cohere/north-mini-code:free` | Chat models | Free | Did not return valid JSON in our tests; not recommended |
+| `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free` | Chat models | Free | Answered "too many requests" for every call when tested |
 
-**Free setup (default), measured:** with the sample schema, 25 reviews in one request took 50 to 75 seconds and all 25 were classified. At 25 reviews per request, 1,000 reviews need 40 requests; at 10 per request they need 100. With 4 parallel requests 1,000 reviews take roughly 10 to 15 minutes.
+**Free setup:** at 25 reviews per request, 1,000 reviews need 40 requests; with 4 parallel requests this takes roughly 10 to 15 minutes.
 
-**Jev, measured** with the sample schema (5 classification fields, 14 possible tags, so 18 questions per review), 4 parallel requests:
-
-| Measure | Result |
-|---|---|
-| Time per request (latency) | about 0.9 to 1.2 seconds |
-| Throughput | about 3 to 5 reviews per second |
-| Cost | about $0.06 per 1,000 reviews (about $0.00006 per review) |
-
-Cost depends on how many questions the schema has and how long the reviews are, so measure on your own data. The app shows the real cost of every run (**Cost** box) and the cost per 1,000 reviews. 1,000 reviews take roughly 4 to 6 minutes with 4 parallel requests; more parallel requests make it faster.
+**Jev:** about 3 to 5 reviews per second with 4 parallel requests, so 1,000 reviews take roughly 4 to 6 minutes. Cost depends on the number of questions and review length; the page shows the real cost of each run.
 
 ### Free-model limits
 
-Free models (names ending in `:free`) have request limits set by OpenRouter, not by this app:
+Set by OpenRouter, not by this app, and counted in **requests**:
 
 | OpenRouter account | Requests per minute | Requests per day |
 |---|---|---|
 | Free (under $10 credits purchased) | 20 | 50 |
 | With at least $10 credits purchased | 20 | 1,000 |
 
-The limits count **requests**, not tokens or reviews. A free decision model needs one request per review, so it is limited to 20 reviews per minute and 50 per day. A free chat model can carry several reviews per request, which is why the default setup works within the free limits. When a `:free` model is selected the bottom-right corner of the app shows the ceiling (for example "200 categorizations per minute is the limitation of our prototype" at 10 reviews per request), and the app refuses a run that needs more requests than are left today (the counter resets at 00:00 UTC), with a clear message.
-
-**Budget for a 1,000-review test on a free account (50 requests per day):** at 25 reviews per request one full run uses 40 requests, so only one full run fits in a day and about 10 requests are left for small tests. At the default 10 per request a full run needs 100 requests, which does not fit in one day on a free account.
-
-### Batching (chat models only)
-
-**Why batching?** For chat models the free-model limit is on *requests* (20 per minute), not on reviews. Sending 10 reviews in one request means 1,000 reviews need about 100 requests instead of 1,000. If one record in a batch comes back invalid, only that record is marked `failed`; the other 9 are kept.
-
-Because each request carries 10 reviews, the limits translate to:
-
-| | Without batching | With batching (10 per request) |
-|---|---|---|
-| Requests for 1,000 reviews | 1,000 | about 100 |
-| Fastest possible time at 20 requests/min | about 50 minutes | about 5 minutes |
-| Reviews per day, free account | 50 | about 500 |
-| Reviews per day, with $10 credits | 1,000 | about 10,000 |
-
-With a free chat model the bottom-right message reads "200 categorizations per minute" (20 requests per minute x 10 reviews). It is a ceiling; in practice each request also takes a few seconds to answer, so the real rate is lower. Decision models cannot be batched because each request is about one review.
+A free chat model carries several reviews per request, so one full 1,000-review run (40 requests) fits in a day on a free account but leaves about 10 requests for other tests. A free decision model needs one request per review, so it allows only 20 reviews per minute and 50 per day. The app checks the remaining daily requests before a run and refuses one that cannot finish, with a clear message. The counter resets at 00:00 UTC.
 
 ### When a limit is reached
 
-The app never shows a technical error screen for limits. If OpenRouter refuses to continue, the run **stops early**, everything already classified is kept, and a message explains what happened. Press **Continue remaining reviews** afterwards to carry on from where it stopped (from the command line, run the same command again).
+The app never shows a technical error screen. If OpenRouter refuses to continue, the run **stops early**, everything already classified is kept (and written to the sheet), and a message explains why. Press **Continue remaining reviews** afterwards.
 
 | Situation | What you see | What to do |
 |---|---|---|
-| Daily free-request limit reached | "The daily limit for free requests has been reached. It resets at 00:00 UTC..." | Wait for the reset, or buy $10 of credits to raise it to 1,000 per day |
-| Out of credits (paid model) | "This OpenRouter account has run out of credits..." | Add credits on OpenRouter, then continue |
-| Too many requests per minute | The app waits and retries by itself; if it keeps failing the affected rows are marked `failed` with a message | Wait a moment and press **Continue remaining reviews** (administrator: lower `MAX_REQUESTS_PER_MIN`) |
-| API key rejected | "OpenRouter rejected the API key..." | Check the key in the settings file or app secrets |
-| Model name unknown or unavailable | "The model '...' was not found..." (a fallback model is tried first if one is set) | Administrator: check `PRIMARY_MODEL` |
-| No internet / provider error | Affected rows are marked `failed` with the reason | Continue remaining reviews once the connection is back |
-| Unreadable CSV or schema | A short message asking for a CSV UTF-8 file or a valid schema | Fix the file and upload it again |
-| Anything unexpected | A short message, with details hidden in an expandable "Technical details" box | Try again |
-
-### What the speed numbers mean
-
-- **Request latency (avg / p95)** is how long the model takes to answer one request. It is a fair measure of model speed, because waiting for the rate limit is not counted. p95 means 95% of requests were faster than that value.
-- **Total time** and **Records / sec** depend on the number of parallel requests and, on free models, are capped by the limits above, so they describe this setup, not the model's maximum throughput.
-- **Cost** is the amount the model charged for the run, as reported by OpenRouter (decision models only).
-- For a true throughput test, use a paid model (no platform request cap) and raise **Parallel requests**.
+| Daily free-request limit | "The daily limit for free requests has been reached. It resets at 00:00 UTC..." | Wait for the reset, or buy $10 of credits |
+| Out of credits (paid model) | "This OpenRouter account has run out of credits..." | Add credits, then continue |
+| Too many requests per minute | The app waits and retries; rows that keep failing are marked `failed` | Press **Continue remaining reviews** |
+| API key rejected | "OpenRouter rejected the API key..." | Administrator: check the key |
+| Sheet not editable / wrong link | A message saying to check the link and set General access to Anyone with the link: Editor | Fix the sharing, check the link |
+| Data tab missing or columns wrong | A message naming the missing tab or columns | Create the tab `Data` with review_id, product, review_text |
 
 ## Run it locally
 
@@ -244,7 +200,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and fill in your values:
+Create a `.env` file:
 
 ```
 OPENROUTER_API_KEY=your-key
@@ -252,59 +208,44 @@ PRIMARY_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 FALLBACK_MODEL=
 MAX_ROWS=1000
 APP_PASSWORD=
+APPS_SCRIPT_URL=
+APPS_SCRIPT_TOKEN=
+# or, instead of the two lines above: GOOGLE_SERVICE_ACCOUNT_FILE=service_account.json
 ```
 
-Never commit `.env`. `MAX_ROWS` caps rows per run and `APP_PASSWORD` (optional) adds an access code, both useful on a hosted app that uses a shared key. `FALLBACK_MODEL` is an optional second model tried when the first one fails.
+Never commit `.env` or `service_account.json`. `MAX_ROWS` caps rows per run, `APP_PASSWORD` (optional) adds an access code for a hosted app, `FALLBACK_MODEL` is an optional second model, `USERS_COUNT` is the number shown in the welcome pop-up and `WELCOME_POPUP=0` turns the pop-up off.
 
-Optional tuning (defaults in brackets): `WORKERS` (4) parallel requests, `MAX_REQUESTS_PER_MIN` (18 for free models, otherwise 0 = no limit) and `REVIEWS_PER_REQUEST` (10, chat models only, up to 25). On Streamlit Cloud put the same names in the app's Secrets.
-
-Quick check from the terminal (5 reviews), then start the app:
+Optional tuning (defaults in brackets): `WORKERS` (4) parallel requests, `MAX_REQUESTS_PER_MIN` (18 for free models, otherwise 0 = no limit), `REVIEWS_PER_REQUEST` (25, chat models only). On Streamlit Cloud put the same names in the app's Secrets (top-level keys, values in quotes).
 
 ```powershell
-python main.py --limit 5
 streamlit run streamlit_app.py
 ```
 
-Command-line options: `--data`, `--schema`, `--out`, `--model`, `--fallback`, `--limit`, `--workers`, `--rpm` (default 18; use `0` for a paid model), `--batch` (default 10, up to 25; chat models only).
+Command line (CSV and a JSON schema file, developers only): `python main.py --data reviews.csv --schema schema.json --limit 5`. Options: `--data`, `--schema`, `--out`, `--model`, `--fallback`, `--limit`, `--workers`, `--rpm`, `--batch`.
 
 ## Files
 
-In the order data moves through the project:
-
-```
-data + schema  ->  streamlit_app.py / main.py  ->  runner.py  ->  classifier.py  ->  OpenRouter  ->  results
-```
-
-| # | File | One-line purpose |
-|---|---|---|
-| 1 | `data/reviews.csv` | 100 hand-written reviews: the small test set and the base of the big one |
-| 2 | `generate_data.py` | Expands those 100 into 1,000 realistic dummy reviews for the speed test |
-| 3 | `data/reviews_1000.csv` | The 1,000-review dataset used to test speed |
-| 4 | `schemas/review_schema.json` | Tells the model which fields to extract and which values are allowed |
-| 5 | `streamlit_app.py` | The web app: choose or upload schema and data, start a run, show results, charts and speed |
-| 6 | `main.py` | Command-line version of the app, for quick tests and batch runs |
-| 7 | `runner.py` | Sends the reviews in parallel (batches of 10 for chat models, one per request for decision models), respects the rate limit, records status, speed and cost |
-| 8 | `classifier.py` | Turns the schema into questions or a prompt, calls OpenRouter, and checks every answer against the schema |
-| 9 | `data/classified.csv` | Output of `main.py`: your data plus the model's fields and a `status` per row |
-
-Supporting files:
-
-| File | One-line purpose |
+| File | Purpose |
 |---|---|
-| `requirements.txt` | The Python libraries to install |
-| `.env` / `.env.example` | Your API key and settings (`.env` is private and never shared; `.env.example` is the empty template) |
-| `.gitignore` | Keeps `.env` and other private files out of version control |
-| `README.md` | This guide |
+| `streamlit_app.py` | The web page: load the sheet, run, show results and charts, write back, PDF download |
+| `sheets.py` | Google Sheets: read the Data tab, write the Categorization and Summary tabs, friendly errors |
+| `report.py` | Summary numbers and charts: the Summary tab content, the PDF and the Excel file |
+| `apps_script/Code.gs` | The Google Apps Script web app used to write into a sheet without a Google key |
+| `assets/hero.svg` | The illustration behind the page title. To use your own picture, add `assets/hero.png` (or `.jpg`/`.webp`); it then replaces the illustration |
+| `assets/welcome_bg.svg`, `assets/soon_messages.svg`, `assets/soon_premium.svg` | Pictures for the welcome pop-up and the Messages and Premium plans pages |
+| `defaults.py` | The built-in classification settings |
+| `runner.py` | Runs the reviews in parallel, respects the rate limit, records status, speed and cost |
+| `classifier.py` | Builds the prompt or questions, calls OpenRouter, checks every answer |
+| `main.py` | Command-line version for quick tests |
+| `requirements.txt`, `.streamlit/config.toml` | Libraries and light theme |
 
 ## Known limitations
 
-- On the free setup a free account gets 50 requests per day, so one full 1,000-review run (40 requests at 25 reviews per request) fits in a day but leaves little room for repeat tests. Buying $10 of credits once raises the limit to 1,000 requests per day.
-- The free Nemotron model is slow (50 to 75 seconds per request) and, as a free shared model, can be busy or rate limited at times. The app retries and then marks the affected reviews `failed`, and **Continue remaining reviews** picks them up again.
+- Free accounts get 50 requests per day, so repeat full runs need a new day or $10 of credits.
+- The free Nemotron model is slow (50 to 75 seconds per request) and, as a shared free model, can be busy; affected reviews are marked `failed` and picked up by **Continue remaining reviews**.
 - Chat models can return a value outside the allowed options; such reviews are marked `failed`, not guessed.
-- Decision models (Jev, Mercury Decide) answer choices, yes/no questions and scores. They do not write free text, so `text` fields (such as a one-sentence summary of the problem) stay empty; use a chat model for those.
-- A decision model needs one request per review and cannot be batched, so on a free model the limits above allow 20 reviews per minute and 50 (or 1,000 with credits) per day.
-- `inception/mercury-decide:free` was not reachable from the developer's location in our tests (regional HTTP 403). Jev works there and costs about $0.06 per 1,000 reviews with the sample schema.
-- Tags and `True`/`False` answers depend on the `threshold` (default 0.5). The best value differs per tag and should be tuned on a hand-labelled sample of 100 to 200 reviews; this has not been done for the sample schema.
-- Model output quality varies. Accuracy has not been measured against a labelled dataset.
-- Results live in the browser session; download the CSV before refreshing the page.
-- Flat schemas only (no nested fields).
+- Decision models cannot write free text, so `text` fields stay empty; they also need one request per review.
+- Google does not allow anonymous writes: the app needs the Apps Script web app or a service account (see "Connecting the app to Google Sheets"). With the Apps Script option every customer sheet must be editable by anyone with the link, and that option has not been tested against real Google yet.
+- Thresholds (default 0.5) and the built-in categories have not been tuned on a hand-labelled sample, and accuracy has not been measured.
+- The **Categorization** and **Summary** tabs are rewritten on every run, so manual edits or extra columns added there are lost. Add your own analysis in another tab.
+- Flat settings only (no nested fields). Results on the page stay while it is open and are also saved in the sheet.

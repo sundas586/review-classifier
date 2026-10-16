@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 520" width="640" height="520" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d8f6ec"/>
+      <stop offset="0.55" stop-color="#e6f1fb"/>
+      <stop offset="1" stop-color="#ece6ff"/>
+    </linearGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="26"/></filter>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.6" fill="#8b7cf6" opacity="0.18"/></pattern>
+  </defs>
+  <rect width="640" height="520" fill="url(#bg)"/>
+  <rect width="640" height="520" fill="url(#dots)"/>
+  <circle cx="90" cy="60" r="120" fill="#b9efe0" opacity="0.8" filter="url(#soft)"/>
+  <circle cx="570" cy="120" r="110" fill="#cfc4ff" opacity="0.75" filter="url(#soft)"/>
+  <circle cx="500" cy="470" r="130" fill="#f9d9c0" opacity="0.7" filter="url(#soft)"/>
+  <circle cx="80" cy="460" r="100" fill="#e6f7a8" opacity="0.7" filter="url(#soft)"/>
+  <path d="M0 430 C 120 390, 220 470, 340 430 S 560 390, 640 430 L640 520 L0 520Z" fill="#ffffff" opacity="0.35"/>
+  <path d="M52 150 l5 12 12 5 -12 5 -5 12 -5 -12 -12 -5 12 -5z" fill="#8b7cf6" opacity="0.7"/>
+  <path d="M590 300 l4 9 9 4 -9 4 -4 9 -4 -9 -9 -4 9 -4z" fill="#f6a15a" opacity="0.8"/>
+  <path d="M560 40 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z" fill="#a6c814" opacity="0.8"/>
+</svg>
