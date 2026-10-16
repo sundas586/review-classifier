@@ -35,7 +35,7 @@ PROTOTYPE_NOTE = (
     f"The free version can check up to about {FREE_REQUESTS_PER_MIN * BATCH_SIZE} reviews per minute."
     if IS_FREE else "This is a prototype, so larger sheets can take a few minutes."
 )
-PAGES = {"use": "Use the App for free", "about": "About the app", "messages": "Messages", "premium": "Premium plans"}
+PAGES = {"use": "Use the App for free", "about": "About the app", "messages": "Message us", "premium": "Premium plans"}
 PAGE_ICONS = {
     "use": ":material/space_dashboard:", "about": ":material/menu_book:",
     "messages": ":material/chat:", "premium": ":material/workspace_premium:",
@@ -45,7 +45,7 @@ SOON_PAGES = {
         "subtitle": "Talk to our team and get help, all in one place.",
         "art": "soon_messages.svg",
         "badge": "Under construction",
-        "heading": "Messages are on the way",
+        "heading": "Our message inbox is on the way",
         "text": "We are building a simple inbox inside this app where you can ask a question, share feedback and read our "
                 "replies. It is not ready yet. Thank you for your patience.",
         "chips": ("Ask a question", "Get help", "Share feedback"),
@@ -317,7 +317,7 @@ def welcome_dialog():
         "<h3>Welcome! We are glad you are here.</h3>"
         "<p>Turn your customer reviews into clear answers in a few clicks. Paste the link of your Google Sheet, press one "
         "button, and see what your customers really think.</p>"
-        '<div class="ticks"><span>Free to use</span><span>No sign-up needed</span><span>Charts you can download</span></div></div>',
+        '<div class="ticks"><span>Free to use</span><span>No sign-up needed</span><span>Excel and PDF downloads</span></div></div>',
         unsafe_allow_html=True,
     )
     start, skip = st.columns([1.5, 1])
@@ -444,11 +444,11 @@ if page == "about":
     cards = (
         (
             ("Get your sheet ready", "Add three tabs to your Google Sheet: Data (your reviews), Categorization and Summary (both empty)."),
-            ("Paste your link", "Copy the link of your Google Sheet, paste it in *Use the App for free* and press Load / refresh data."),
+            ("Paste your link", "Copy the link of your Google Sheet, paste it on the page \"Use the App for free\" and press Load / refresh data."),
             ("See your results", "The app fills in the Categorization and Summary tabs for you. You also see charts here."),
         ) if WRITES else (
             ("Get your sheet ready", "Put your reviews in a Google Sheet, on a tab named Data."),
-            ("Paste your link", "Copy the link of your Google Sheet, paste it in *Use the App for free* and press Load / refresh data."),
+            ("Paste your link", "Copy the link of your Google Sheet, paste it on the page \"Use the App for free\" and press Load / refresh data."),
             ("Download your results", "See your results here, then download them as an Excel file and a PDF of the charts."),
         )
     )

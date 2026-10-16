@@ -284,20 +284,20 @@ def _send(url, model, body, retries=3):
 
         code = resp.status_code
         if code == 401:
-            raise FatalApiError("OpenRouter rejected the API key. Check that OPENROUTER_API_KEY is correct and still active.")
+            raise FatalApiError("The AI service did not accept our access key, so the run could not continue. Please contact the person who set up this app.")
         if code == 402:
-            raise FatalApiError("This OpenRouter account has run out of credits. Add credits at openrouter.ai/settings/credits and try again.")
+            raise FatalApiError("The AI service has run out of credit, so the run could not continue. Please contact the person who set up this app.")
         if code == 403:
-            raise FatalApiError(f"OpenRouter refused the request: {_api_message(resp)}")
+            raise FatalApiError(f"The AI service did not accept the request, so the run could not continue. Please try again later. ({_api_message(resp)})")
         if code == 404:
-            raise FatalApiError(f"The model '{model}' was not found or is unavailable on OpenRouter. Check the model name in the settings.")
+            raise FatalApiError("The AI model we use is not available right now. Please try again later, or contact the person who set up this app.")
 
         if code == 429:
             reason = _api_message(resp).lower()
             if "per-day" in reason or "per day" in reason or "daily" in reason:
                 raise FatalApiError(
-                    "The daily limit for free requests has been reached. It resets at 00:00 UTC. "
-                    "Buying $10 of credits on OpenRouter raises it to 1,000 requests per day."
+                    "The free daily limit has been reached, so the run stopped. It starts again at midnight UTC, "
+                    "so please try again tomorrow."
                 )
         if code == 429 or code >= 500:
             time.sleep(_wait_time(resp, attempt))
@@ -319,9 +319,9 @@ def _send(url, model, body, retries=3):
         return reply
 
     if resp is None:
-        raise ClassifyError("Could not reach OpenRouter. Check the internet connection.")
+        raise ClassifyError("Could not reach the AI service. Please check your internet connection and try again.")
     if resp.status_code == 429:
-        raise ClassifyError("OpenRouter is limiting requests per minute. Lower 'Max requests per minute' and try again.")
+        raise ClassifyError("The AI service is busy right now. Please wait a minute and try again.")
     raise ClassifyError(f"{model} kept failing (status {resp.status_code})")
 
 

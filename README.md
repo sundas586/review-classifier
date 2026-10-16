@@ -81,7 +81,7 @@ Paste the link and press **Load / refresh data**. Processing starts automaticall
 |---|---|
 | **Use the App for free** | Connect a sheet, run, results |
 | **About the app** | A short guide in plain English ("Good to know", what is analysed, how to read the results) and rotating testimonials at the bottom |
-| **Messages** | An "under construction" page with a picture (marked SOON) |
+| **Message us** | An "under construction" page with a picture (marked SOON) |
 | **Premium plans** | A "coming soon" page with a picture (marked SOON) |
 
 On the first visit a welcome pop-up appears over a blurred page (once per visit). It offers **Show me around (1 minute)**, a 4-step guided tour (paste the link, let the app read the sheet, press Load / refresh data, see and download the results) with Back, Next, Skip and Finish buttons, or **Skip**. The tour can be opened again at any time with **Take the 1-minute tour** on the *Use the App for free* and *About the app* pages. The pop-up shows a number of teams that use the app: set the real number with `USERS_COUNT` in `.env` (the default `1,200` is a placeholder) and switch the pop-up off with `WELCOME_POPUP=0`. The testimonials are sample text in `TESTIMONIALS` in `streamlit_app.py`; replace them with real quotes before launch. The tour steps are in `TOUR_STEPS` in the same file.
