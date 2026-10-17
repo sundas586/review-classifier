@@ -215,7 +215,9 @@ APPS_SCRIPT_TOKEN=
 
 Never commit `.env` or `service_account.json`. `MAX_ROWS` caps rows per run, `APP_PASSWORD` (optional) adds an access code for a hosted app, `FALLBACK_MODEL` is an optional second model, `USERS_COUNT` is the number shown in the welcome pop-up and `WELCOME_POPUP=0` turns the pop-up off.
 
-Optional tuning (defaults in brackets): `WORKERS` (4) parallel requests, `MAX_REQUESTS_PER_MIN` (18 for free models, otherwise 0 = no limit), `REVIEWS_PER_REQUEST` (25, chat models only). On Streamlit Cloud put the same names in the app's Secrets (top-level keys, values in quotes).
+Optional tuning (defaults in brackets): `WORKERS` (4, or 8 for a paid decision model such as Jev) parallel requests, `MAX_REQUESTS_PER_MIN` (18 for free models, otherwise 0 = no limit), `REVIEWS_PER_REQUEST` (25, chat models only) and `DEFAULT_ROWS` (0 = all rows): how many reviews are checked automatically right after a sheet is loaded, handy for a quick test of a model (for example `DEFAULT_ROWS=10`); the customer can still change the number on the page. On Streamlit Cloud put the same names in the app's Secrets (top-level keys, values in quotes). A `FALLBACK_MODEL` of a different kind than `PRIMARY_MODEL` (a chat model behind a decision model, or the other way round) is ignored, because it would be asked one review per request.
+
+**Switching the AI model** only needs `PRIMARY_MODEL` (in `.env`, and in Secrets for the hosted app). The left panel shows the model name and its approximate speed. To compare models, set `DEFAULT_ROWS=10`, change `PRIMARY_MODEL`, and run the same sheet: `typesafe/jev-1.13` (Jev, paid, about $0.06 per 1,000 reviews, no per-minute cap), `inception/mercury-decide:free` (free decision model, 20 requests per minute, and a regional block from some countries) and `nvidia/nemotron-3-super-120b-a12b:free` (free chat model, slow).
 
 ```powershell
 streamlit run streamlit_app.py

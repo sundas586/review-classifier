@@ -15,13 +15,19 @@ from runner import META_COLS, run
 
 # Settings come from the environment (.env locally, Secrets when hosted), not from the page.
 MODEL = os.getenv("PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
-FALLBACK = os.getenv("FALLBACK_MODEL", "")
 IS_FREE = MODEL.endswith(":free")
-WORKERS = int(os.getenv("WORKERS", "4"))
+DECISION = is_decision_model(MODEL)
+FALLBACK = os.getenv("FALLBACK_MODEL", "")
+if FALLBACK and is_decision_model(FALLBACK) != DECISION:
+    FALLBACK = ""  # a chat model behind a decision model would be asked one review per slow request
+WORKERS = int(os.getenv("WORKERS", "8" if DECISION and not IS_FREE else "4"))
 RPM = int(os.getenv("MAX_REQUESTS_PER_MIN", "18" if IS_FREE else "0"))
-BATCH_SIZE = 1 if is_decision_model(MODEL) else int(os.getenv("REVIEWS_PER_REQUEST", "25"))
+BATCH_SIZE = 1 if DECISION else int(os.getenv("REVIEWS_PER_REQUEST", "25"))
 MAX_ROWS = int(os.getenv("MAX_ROWS", "1000"))
+DEFAULT_ROWS = int(os.getenv("DEFAULT_ROWS", "0"))  # reviews checked at the first load, 0 = all (set e.g. 10 to test a model)
 FREE_REQUESTS_PER_MIN = 20
+MODEL_NAMES = {"typesafe/jev-1.13": "Jev", "inception/mercury-decide:free": "Mercury Decide", "nvidia/nemotron-3-super-120b-a12b:free": "Nemotron"}
+MODEL_LABEL = MODEL_NAMES.get(MODEL, MODEL.split("/")[-1].replace(":free", ""))
 
 WAIT_MESSAGE = "Please wait. This is a prototype, so it can take a few minutes for a big sheet."
 FIELD_MEANING = {
@@ -31,10 +37,15 @@ FIELD_MEANING = {
     "priority": "How urgent is it to reply?",
     "has_issue": "Is the customer reporting a problem?",
 }
-PROTOTYPE_NOTE = (
-    f"The free version can check up to about {FREE_REQUESTS_PER_MIN * BATCH_SIZE} reviews per minute."
-    if IS_FREE else "This is a prototype, so larger sheets can take a few minutes."
-)
+if DECISION and IS_FREE:
+    SPEED = f"about {RPM or FREE_REQUESTS_PER_MIN} reviews per minute"
+elif DECISION:
+    SPEED = "about 200 reviews per minute"
+elif IS_FREE:
+    SPEED = f"about {WORKERS * BATCH_SIZE} reviews per minute"
+else:
+    SPEED = "a few minutes for a big sheet"
+PROTOTYPE_NOTE = f"AI model: {MODEL_LABEL}. It checks {SPEED}." if not IS_FREE else f"AI model: {MODEL_LABEL} (free). It checks {SPEED}."
 PAGES = {"use": "Use the App for free", "about": "About the app", "messages": "Message us", "premium": "Premium plans"}
 PAGE_ICONS = {
     "use": ":material/space_dashboard:", "about": ":material/menu_book:",
@@ -663,7 +674,7 @@ limit = min(len(inputs), MAX_ROWS)
 with st.container(key="card_preview"):
     st.subheader("Your reviews")
     st.dataframe(inputs.head(10), width="stretch")
-    rows = st.number_input(f"Number of reviews to process (up to {limit})", 1, limit, limit)
+    rows = st.number_input(f"Number of reviews to process (up to {limit})", 1, limit, min(limit, DEFAULT_ROWS) if DEFAULT_ROWS else limit)
 
 if is_decision_model(MODEL):
     skipped = build_questions(schema)[1]
